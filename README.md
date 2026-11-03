@@ -19,6 +19,10 @@ Built with **HTML, CSS, and vanilla JavaScript**. No backend or account required
 
 ## Getting Started
 
+### Run on Browser
+
+Visit https://ilmoonmazed.github.io/xm-simulator/ to start an xm.
+
 ### Run Locally
 
 1. Download or clone this repository.
