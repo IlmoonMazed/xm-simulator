@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XM — Examination Simulator</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#"><span class="brand-mark">X</span><span>XM <small>EXAMINATION SIMULATOR</small></span></a>
+    <div class="top-actions">
+      <span id="appStatus" class="status-pill">Ready</span>
+      <button id="themeToggle" class="icon-btn" aria-label="Toggle theme">☾ Dark mode</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section id="setupView" class="view">
+      <div class="hero">
+        <div>
+          <p class="eyebrow">PERSONAL EXAM WORKSPACE</p>
+          <h1>Prepare your <span>XM.</span></h1>
+          <p class="muted">Set up your subjects, timing and marking rules. Your progress is recorded automatically.</p>
+        </div>
+        <div class="hero-stamp"><strong>XM</strong><span>SIMULATOR</span></div>
+      </div>
+
+      <div class="setup-grid">
+        <section class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">01 / STRUCTURE</p><h2>Exam structure</h2></div></div>
+          <label class="field-label" for="examName">Exam name <span class="optional">optional</span></label>
+          <input id="examName" type="text" placeholder="e.g. Physics Chapter Test">
+          <div class="two-col">
+            <div><label class="field-label" for="duration">Duration (minutes)</label><input id="duration" type="number" min="1" max="600" value="60"></div>
+            <div><label class="field-label" for="optionCount">Options per question</label><input id="optionCount" type="number" min="2" max="12" value="4"></div>
+          </div>
+          <div class="two-col">
+            <div><label class="field-label" for="correctMarks">Correct answer (+X)</label><input id="correctMarks" type="number" min="0" step="0.25" value="1"></div>
+            <div><label class="field-label" for="wrongMarks">Wrong answer deduction (Y)</label><input id="wrongMarks" type="number" min="0" step="0.05" placeholder="Auto: 0.25 × X"></div>
+          </div>
+          <p class="muted tiny">Leave the deduction blank to use 0.25 × the correct-answer mark.</p>
+          <div class="subject-heading"><div><h3>Subjects & question counts</h3><p class="muted small">The total number of questions is calculated automatically.</p></div><div class="inline-actions"><span class="count-chip" id="totalQuestions">0 questions</span><button id="addSubject" class="btn btn-outline">＋ Add subject</button></div></div>
+          <div id="subjectsEditor" class="subjects-editor"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">02 / RULES</p><h2>Answer rules</h2></div></div>
+          <div class="setting-row"><div><strong>Change selected answers</strong><p class="muted small">Allow an answer to be changed after selection.</p></div><label class="switch"><input id="mutable" type="checkbox" checked><span></span></label></div>
+          <div class="setting-row"><div><strong>Multiple answers</strong><p class="muted small">Allow selecting more than one option per question.</p></div><label class="switch"><input id="multiple" type="checkbox"><span></span></label></div>
+          <div class="setting-row"><div><strong>Allow unanswered questions</strong><p class="muted small">Turn off to require an answer before moving on or finishing.</p></div><label class="switch"><input id="allowUnanswered" type="checkbox" checked><span></span></label></div>
+          <div class="setting-row"><div><strong>Checkpoint alarm</strong><p class="muted small">Play a short sound at each scheduled checkpoint.</p></div><label class="switch"><input id="alarmSetup" type="checkbox" checked><span></span></label></div>
+          <div class="note"><span>i</span><p>These rules apply to every question in this exam. Answers lock automatically when time runs out.</p></div>
+
+          <div class="checkpoint-head"><div><p class="eyebrow">03 / TIME TRACKING</p><h2>Checkpoints</h2><p class="muted small">Automatic snapshots of your answers and any changes.</p></div><button id="addCheckpoint" class="btn btn-outline">＋ Add checkpoint</button></div>
+          <div class="preset-row">
+            <button class="preset" data-fraction="0.25">¼ time</button>
+            <button class="preset" data-fraction="0.5">½ time</button>
+            <button class="preset" data-fraction="0.75">¾ time</button>
+          </div>
+          <div id="checkpointList" class="checkpoint-list"><p class="empty-state">No checkpoints added yet.</p></div>
+          <p class="muted tiny">Checkpoint times are measured from the start of the exam. No on-screen interruption will appear during the exam.</p>
+        </section>
+      </div>
+      <div class="setup-footer"><div><span class="secure-dot"></span><span class="muted small">Your exam history stays in this browser.</span></div><button id="startExam" class="btn btn-primary btn-large">Start examination <span>→</span></button></div>
+      <section class="panel history-panel">
+        <div class="panel-heading"><div><p class="eyebrow">YOUR RECORDS</p><h2>Previous examinations</h2></div><button id="clearHistory" class="text-btn">Clear history</button></div>
+        <div id="historyList" class="history-list"><p class="empty-state">No saved examinations yet.</p></div>
+      </section>
+    </section>
+
+    <section id="examView" class="view hidden">
+      <div class="exam-head">
+        <div><p class="eyebrow" id="examEyebrow">EXAM IN PROGRESS</p><h1 id="examTitle">XM</h1><p class="muted small" id="examMeta"></p></div>
+        <div class="timer-card"><span>TIME REMAINING</span><strong id="timer">60:00</strong><div class="timer-track"><i id="timerBar"></i></div></div>
+      </div>
+      <div class="exam-layout">
+        <aside class="question-nav panel">
+          <div class="nav-top"><strong>Questions</strong><span id="progressText" class="muted small">0 / 0 answered</span></div>
+          <div id="subjectNav"></div>
+          <div class="legend"><span><i class="legend-dot done"></i> Answered</span><span><i class="legend-dot current"></i> Current</span><span><i class="legend-dot"></i> Unanswered</span></div>
+          <button id="finishExam" class="btn btn-danger btn-block">Finish examination</button>
+        </aside>
+        <section class="question-area">
+          <div class="question-toolbar"><span id="subjectLabel" class="subject-tag">Subject</span><span id="questionCounter" class="muted small">Question 1</span></div>
+          <article class="question-card panel">
+            <div class="question-number" id="questionNumber">01</div>
+            <h2 id="questionPrompt">Question 1</h2>
+            <p class="muted small" id="questionHint">Select your answer below.</p>
+            <div id="optionsArea" class="options-area"></div>
+            <div class="question-footer"><span id="answerState" class="muted small">Not answered</span><div class="nav-buttons"><button id="prevQuestion" class="btn btn-outline">← Previous</button><button id="nextQuestion" class="btn btn-primary">Next →</button></div></div>
+          </article>
+          <div class="exam-bottom"><span class="muted tiny">Your answers are saved as you go.</span><span id="checkpointNext" class="muted tiny"></span></div>
+        </section>
+      </div>
+      <div class="floating-controls">
+        <button id="alarmFloat" class="float-btn active" title="Toggle checkpoint alarm">♫ Alarm on</button>
+      </div>
+    </section>
+
+    <section id="evaluationView" class="view hidden">
+      <div class="hero compact"><div><p class="eyebrow">EXAM COMPLETED</p><h1>Evaluate your <span>answers.</span></h1><p class="muted">Mark each answered question as correct or wrong. Unanswered questions remain unmarked.</p></div></div>
+      <div class="evaluation-summary panel"><div><span class="muted small">Questions answered</span><strong id="evalAnswered">0</strong></div><div><span class="muted small">Unanswered</span><strong id="evalUnanswered">0</strong></div><div><span class="muted small">Time used</span><strong id="evalTime">00:00</strong></div></div>
+      <div class="eval-toolbar"><div><h2>Answer evaluation</h2><p class="muted small">You can filter by subject and move through the questions.</p></div><div class="eval-actions"><select id="evalSubjectFilter"><option value="all">All subjects</option></select><button id="markAllPending" class="btn btn-outline">Mark remaining wrong</button></div></div>
+      <div id="evaluationList" class="evaluation-list"></div>
+      <div class="setup-footer"><span class="muted small" id="evalProgress">0 evaluated</span><button id="completeEvaluation" class="btn btn-primary btn-large">Generate report →</button></div>
+    </section>
+
+    <section id="reportView" class="view hidden">
+      <div class="report-header"><div><p class="eyebrow">EXAMINATION REPORT</p><h1 id="reportTitle">XM Report</h1><p class="muted" id="reportDate"></p></div><div class="report-actions"><button id="downloadPdf" class="btn btn-outline">↓ Download PDF</button><button id="newExam" class="btn btn-primary">＋ New XM</button></div></div>
+      <div class="score-hero panel"><div><span class="muted small">FINAL SCORE</span><strong id="finalScore">0</strong><span class="muted small" id="scoreOutOf"></span></div><div class="score-ring" id="accuracyRing"><strong id="accuracy">0%</strong><span>ACCURACY</span></div><div class="score-breakdown"><div><span>Correct</span><strong id="reportCorrect">0</strong></div><div><span>Wrong</span><strong id="reportWrong">0</strong></div><div><span>Unanswered</span><strong id="reportUnanswered">0</strong></div><div><span>Marks deducted</span><strong id="reportDeducted">0</strong></div></div></div>
+      <div class="report-filters panel"><div><div><h3>Explore results</h3><p class="muted small">Filter the question log to inspect patterns.</p></div><button id="resetFilters" class="text-btn">Reset filters</button></div><div class="filter-grid">
+        <label>Subject<select id="filterSubject"><option value="all">All subjects</option></select></label>
+        <label>Result<select id="filterResult"><option value="all">All results</option><option value="correct">Correct</option><option value="wrong">Wrong</option><option value="unanswered">Unanswered</option></select></label>
+        <label>Answer status<select id="filterChanged"><option value="all">Changed or not</option><option value="changed">Changed answers</option><option value="unchanged">Never changed</option></select></label>
+        <label>Checkpoint<select id="filterCheckpoint"><option value="all">All checkpoints</option></select></label>
+        <label>Option selected<select id="filterOption"><option value="all">Any option</option><option value="answered">Answered</option><option value="blank">Unanswered</option></select></label>
+        <label>Sort by<select id="filterSort"><option value="original">Question order</option><option value="time-desc">Most time spent</option><option value="time-asc">Least time spent</option><option value="changes">Most changed</option></select></label>
+      </div></div>
+      <div class="report-grid">
+        <section class="panel"><div class="panel-heading"><div><h3>Subject performance</h3><p class="muted tiny">Correctness and marks by subject</p></div></div><div id="subjectReport"></div></section>
+        <section class="panel"><div class="panel-heading"><div><h3>Time & checkpoints</h3><p class="muted tiny">Cumulative progress at each checkpoint</p></div></div><div id="checkpointReport"></div></section>
+      </div>
+      <section class="panel question-report-panel"><div class="panel-heading"><div><h3>Question-by-question log</h3><p class="muted tiny" id="filteredCount">Showing all questions</p></div></div><div id="questionReport" class="question-report"></div></section>
+      <section class="panel"><div class="panel-heading"><div><h3>Answer change history</h3><p class="muted tiny">Every selection and change, in chronological order</p></div></div><div id="changeHistory"></div></section>
+    </section>
+  </main>
+  <div id="modal" class="modal hidden"><div class="modal-card"><div class="modal-head"><h3 id="modalTitle">Confirm</h3><button id="modalClose" class="icon-btn">✕</button></div><p id="modalText" class="muted"></p><div id="modalBody"></div><div class="modal-actions"><button id="modalCancel" class="btn btn-outline">Cancel</button><button id="modalConfirm" class="btn btn-primary">Confirm</button></div></div></div>
+  <script src="app.js"></script>
+</body>
+</html>
