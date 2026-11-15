@@ -6,6 +6,8 @@ let activeQuestion = null, activeSince = 0;
 const letters = 'ABCDEFGHIJKL';
 const fmt = s => {s=Math.max(0,Math.floor(s));return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`};
 const fmtClock = s => {s=Math.max(0,Math.floor(s));return `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor(s%3600/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`};
+const getDurationSeconds = () => Math.max(1, Math.min(36000, Number($('duration').value)||3600));
+function setDurationSeconds(seconds){const v=Math.max(1,Math.min(36000,Math.floor(Number(seconds)||3600)));$('duration').value=v;$('durationDisplay').textContent=fmtClock(v);checkpoints=checkpoints.filter(c=>c.seconds<v);renderCheckpoints();}
 const num = n => Number((n||0).toFixed(2));
 const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function show(view){['setupView','examView','evaluationView','reportView'].forEach(v=>$(v).classList.toggle('hidden',v!==view));window.scrollTo(0,0)}
@@ -24,8 +26,8 @@ function updateTotal(){
  $('totalQuestions').textContent=subjects.reduce((a,s)=>a+s.count,0)+' questions';
 }
 function addCheckpoint(minute,label=''){
- const duration=Math.max(1,Number($('duration').value)||60), t=Math.round(minute*60);
- if(t<=0||t>=duration*60){alert('A checkpoint must be after the start and before the exam ends.');return}
+ const duration=getDurationSeconds(), t=Math.round(minute*60);
+ if(t<=0||t>=duration){alert('A checkpoint must be after the start and before the exam ends.');return}
  if(checkpoints.some(c=>c.seconds===t)){alert('A checkpoint already exists at that time.');return}
  checkpoints.push({seconds:t,label:label||`Checkpoint ${checkpoints.length+1}`});checkpoints.sort((a,b)=>a.seconds-b.seconds);renderCheckpoints();
 }
@@ -52,7 +54,8 @@ function answerQuestion(q,selected){
 }
 function buildExam(){
  updateTotal();
- const duration=Math.max(1,Math.min(600,Number($('duration').value)||60));
+ const durationSeconds=getDurationSeconds();
+ const duration=durationSeconds/60;
  const total=subjects.reduce((a,s)=>a+s.count,0);
  if(!total){alert('Add at least one question.');return}
  const options=Math.max(2,Math.min(12,Number($('optionCount').value)||4));
@@ -60,9 +63,9 @@ function buildExam(){
  const wrong=$('wrongMarks').value===''?correct*.25:Math.max(0,Number($('wrongMarks').value));
  let qs=[],id=0;
  subjects.forEach((s,si)=>{for(let i=0;i<s.count;i++)qs.push({id:id++,subject:s.name,subjectIndex:si,number:i+1,answers:[],history:[],timeSpent:0,evaluation:null})});
- exam={id:Date.now(),name:$('examName').value.trim()||'XM Examination',duration,options,mutable:$('mutable').checked,multiple:$('multiple').checked,allowUnanswered:$('allowUnanswered').checked,correctMarks:correct,wrongMarks:wrong,subjects:subjects.map(s=>({...s})),questions:qs,checkpoints:checkpoints.map(c=>({...c,triggered:false})),startedAt:Date.now(),endsAt:Date.now()+duration*60000,locked:false,alarm:$('alarmSetup').checked,checkpointLogs:[],finishedAt:null};
+ exam={id:Date.now(),name:$('examName').value.trim()||'XM Examination',duration,options,mutable:$('mutable').checked,multiple:$('multiple').checked,allowUnanswered:$('allowUnanswered').checked,correctMarks:correct,wrongMarks:wrong,subjects:subjects.map(s=>({...s})),questions:qs,checkpoints:checkpoints.map(c=>({...c,triggered:false})),durationSeconds,startedAt:Date.now(),endsAt:Date.now()+durationSeconds*1000,locked:false,alarm:$('alarmSetup').checked,checkpointLogs:[],finishedAt:null};
  alarmOn=exam.alarm;currentIndex=0;setActive(qs[0].id);
- $('examTitle').textContent=exam.name;$('examMeta').textContent=`${total} questions · ${exam.subjects.length} subjects · ${duration} minutes`;
+ $('examTitle').textContent=exam.name;$('examMeta').textContent=`${total} questions · ${exam.subjects.length} subjects · ${fmtClock(durationSeconds)} duration`;
  
  $('alarmFloat').classList.toggle('active',alarmOn);$('alarmFloat').textContent=alarmOn?'♫ Alarm on':'♫ Alarm off';
  show('examView');renderExam();startClock();
@@ -72,7 +75,7 @@ function startClock(){
  const update=()=>{
   if(!exam||exam.locked)return;
   const left=Math.max(0,Math.ceil((exam.endsAt-Date.now())/1000));
-  $('timer').textContent=fmt(left);$('timerBar').style.width=`${Math.max(0,left/(exam.duration*60)*100)}%`;
+  $('timer').textContent=fmt(left);$('timerBar').style.width=`${Math.max(0,left/(exam.durationSeconds||exam.duration*60)*100)}%`;
   $('timer').style.color=left<=60?'var(--red)':'var(--text)';
   const elapsed=Math.floor((Date.now()-exam.startedAt)/1000);
   exam.checkpoints.forEach((cp,i)=>{if(!cp.triggered&&elapsed>=cp.seconds){recordTime();cp.triggered=true;takeCheckpoint(cp);if(alarmOn)playAlarm();}});
@@ -107,26 +110,28 @@ function renderExam(){
 }
 function finishExam(auto=false){
  if(!exam||exam.locked)return;
- if(!auto){const unanswered=exam.questions.filter(q=>!q.answers.length).length;if(!exam.allowUnanswered&&unanswered){alert(`You still have ${unanswered} unanswered question(s). Answer them before finishing.`);return}modal({title:'Finish examination?',text:`You have ${unanswered} unanswered question(s). Your answers will be locked and you will move to evaluation.`,confirm:'Finish XM',onConfirm:()=>completeExam()});return}
+ if(!auto){const unanswered=exam.questions.filter(q=>!q.answers.length).length;modal({title:'Finish examination?',text:`You have ${unanswered} unanswered question(s). They will receive 0 marks unless you choose to mark a blank answer correct during evaluation. Your answers will be locked.`,confirm:'Finish XM',onConfirm:()=>completeExam()});return}
  completeExam();
 }
 function completeExam(){
  recordTime();exam.locked=true;exam.finishedAt=Date.now();clearInterval(timerId);clearInterval(tickId);$('appStatus').textContent='Exam completed';
- exam.questions.forEach(q=>q.evaluation=q.answers.length?null:'unanswered');
+ exam.questions.forEach(q=>q.evaluation=(!q.answers.length&&!exam.allowUnanswered)?'unanswered':null);
  $('evalAnswered').textContent=exam.questions.filter(q=>q.answers.length).length;$('evalUnanswered').textContent=exam.questions.filter(q=>!q.answers.length).length;$('evalTime').textContent=fmt((exam.finishedAt-exam.startedAt)/1000);
  $('evalSubjectFilter').innerHTML='<option value="all">All subjects</option>'+exam.subjects.map(s=>`<option>${esc(s.name)}</option>`).join('');
  show('evaluationView');renderEvaluation();
 }
 function renderEvaluation(){
  const filter=$('evalSubjectFilter').value;
- const qs=exam.questions.filter(q=>q.answers.length&&(filter==='all'||q.subject===filter));
- $('evaluationList').innerHTML=qs.map(q=>`<div class="eval-card"><div class="eval-qno">Q${q.id+1}</div><div><strong>${esc(q.subject)} · Question ${q.number}</strong><p>${q.answers.length?`Selected: ${q.answers.map(i=>letters[i]).join(', ')}`:'No answer selected'} · ${fmt(q.timeSpent)} spent</p></div><div class="eval-options"><button class="eval-choice correct ${q.evaluation==='correct'?'active':''}" data-eval="${q.id}:correct">✓ Correct</button><button class="eval-choice wrong ${q.evaluation==='wrong'?'active':''}" data-eval="${q.id}:wrong">✕ Wrong</button></div></div>`).join('')||'<p class="empty-state">No questions in this subject.</p>';
- const evaluated=exam.questions.filter(q=>q.evaluation==='correct'||q.evaluation==='wrong').length;
- $('evalProgress').textContent=`${evaluated} / ${exam.questions.filter(q=>q.answers.length).length} answered questions evaluated`;
- $('completeEvaluation').disabled=exam.questions.some(q=>q.answers.length&&!q.evaluation);
+ const eligible=q=>q.answers.length||(exam.allowUnanswered&&!q.answers.length);
+ const qs=exam.questions.filter(q=>eligible(q)&&(filter==='all'||q.subject===filter));
+ $('evaluationList').innerHTML=qs.map(q=>{const blank=!q.answers.length;return `<div class="eval-card"><div class="eval-qno">Q${q.id+1}</div><div><strong>${esc(q.subject)} · Question ${q.number}</strong><p>${blank?'No answer selected':`Selected: ${q.answers.map(i=>letters[i]).join(', ')}`} · ${fmt(q.timeSpent)} spent</p></div><div class="eval-options"><button class="eval-choice correct ${q.evaluation==='correct'?'active':''}" data-eval="${q.id}:correct">✓ Correct</button>${blank?'':`<button class="eval-choice wrong ${q.evaluation==='wrong'?'active':''}" data-eval="${q.id}:wrong">✕ Wrong</button>`}</div></div>`}).join('')||'<p class="empty-state">No questions to evaluate in this subject.</p>';
+ const evaluated=exam.questions.filter(q=>eligible(q)&&!!q.evaluation).length;
+ const eligibleCount=exam.questions.filter(eligible).length;
+ $('evalProgress').textContent=`${evaluated} / ${eligibleCount} questions evaluated`;
+ $('completeEvaluation').disabled=exam.questions.some(q=>eligible(q)&&!q.evaluation);
 }
 function calculate(){
- const correct=exam.questions.filter(q=>q.evaluation==='correct').length,wrong=exam.questions.filter(q=>q.evaluation==='wrong').length,unanswered=exam.questions.filter(q=>!q.answers.length).length;
+ const correct=exam.questions.filter(q=>q.evaluation==='correct').length,wrong=exam.questions.filter(q=>q.evaluation==='wrong').length,unanswered=exam.questions.filter(q=>!q.answers.length&&q.evaluation!=='correct').length;
  const earned=correct*exam.correctMarks,deducted=wrong*exam.wrongMarks,total=exam.questions.length*exam.correctMarks;
  const answered=correct+wrong,accuracy=answered?correct/answered*100:0;
  return {correct,wrong,unanswered,earned,deducted,score:earned-deducted,total,accuracy};
@@ -162,7 +167,7 @@ function renderChangeHistory(){
  $('changeHistory').innerHTML=events.length?events.map(({q,h})=>`<div class="change-row"><span class="muted">${fmtClock(h.at/1000)}</span><span>Q${q.id+1} · ${esc(q.subject)}</span><span>${h.from.length?h.from.map(i=>letters[i]).join(','):'—'} → <strong>${h.to.length?h.to.map(i=>letters[i]).join(','):'—'}</strong></span></div>`).join(''):'<p class="empty-state">No answer changes were recorded.</p>';
 }
 function renderHistory(){
- const h=getHistory();$('historyList').innerHTML=h.length?h.map(x=>`<div class="history-item"><div><strong>${esc(x.name)}</strong><br><span>${new Date(x.startedAt).toLocaleString()} · ${x.questions.length} questions · ${x.duration} min</span></div><div><strong>${num(x.summary?.score||0)} marks</strong> <button class="text-btn" data-openhistory="${x.id}">View report</button></div></div>`).join(''):'<p class="empty-state">No saved examinations yet.</p>';
+ const h=getHistory();$('historyList').innerHTML=h.length?h.map(x=>`<div class="history-item"><div><strong>${esc(x.name)}</strong><br><span>${new Date(x.startedAt).toLocaleString()} · ${x.questions.length} questions · ${fmtClock(x.durationSeconds??x.duration*60)}</span></div><div><strong>${num(x.summary?.score||0)} marks</strong> <button class="text-btn" data-openhistory="${x.id}">View report</button></div></div>`).join(''):'<p class="empty-state">No saved examinations yet.</p>';
 }
 function loadOldReport(id){const old=getHistory().find(x=>x.id===Number(id));if(!old)return;exam=old;renderReport();show('reportView')}
 function downloadPdf(){
@@ -176,7 +181,7 @@ function downloadPdf(){
  const section=(name,detail='')=>{check(14);txt(name.toUpperCase(),M,y,10,C.navy,true);if(detail)txt(detail,W-M-42,y,7,C.gray);stroke(C.gold);doc.setLineWidth(.7);doc.line(M,y+3,W-M,y+3);y+=10};
  box(0,0,W,48,C.navy);txt('XM  /  EXAMINATION REPORT',M,14,8,[232,190,105],true);txt(exam.name,M,27,17,C.white,true);txt(new Date(exam.startedAt).toLocaleString(),M,37,8,[210,220,230]);fill(C.gold);doc.circle(184,22,10,'F');txt('XM',178,25,13,C.white,true);y=58;
  const cw=(W-2*M-8)/3,card=(x,label,val,sub,color)=>{box(x,y,cw,28,C.pale);txt(label.toUpperCase(),x+4,y+7,6,C.gray,true);txt(val,x+4,y+17,14,color,true);txt(sub,x+4,y+24,6,C.gray)};
- card(M,'Final score',`${num(r.score)} / ${num(r.total)}`,`${num(r.earned)} earned · ${num(r.deducted)} deducted`,C.navy);card(M+cw+4,'Accuracy',`${Math.round(r.accuracy)}%`,`${r.correct} correct / ${r.correct+r.wrong} answered`,C.green);card(M+2*(cw+4),'Time used',fmtClock((exam.finishedAt-exam.startedAt)/1000),`${exam.duration} minute allowance`,C.blue);y+=36;
+ card(M,'Final score',`${num(r.score)} / ${num(r.total)}`,`${num(r.earned)} earned · ${num(r.deducted)} deducted`,C.navy);card(M+cw+4,'Accuracy',`${Math.round(r.accuracy)}%`,`${r.correct} correct / ${r.correct+r.wrong} answered`,C.green);card(M+2*(cw+4),'Time used',fmtClock((exam.finishedAt-exam.startedAt)/1000),`${fmtClock(exam.durationSeconds??exam.duration*60)} allowance`,C.blue);y+=36;
  section('Performance distribution','Correct · Wrong · Unanswered');const total=exam.questions.length,bw=W-2*M;box(M,y,bw,9,[235,239,244]);let x=M;[[r.correct,C.green],[r.wrong,C.red],[r.unanswered,C.blank]].forEach(([v,c])=>{const w=total?bw*v/total:0;if(w){fill(c);doc.rect(x,y,w,9,'F');x+=w}});y+=16;
  [[`Correct ${r.correct}`,C.green],[`Wrong ${r.wrong}`,C.red],[`Unanswered ${r.unanswered}`,C.blank]].forEach(([t,c],i)=>{fill(c);doc.circle(M+i*57+2,y-1,1.5,'F');txt(t,M+i*57+6,y,7,C.gray)});y+=10;
  section('Subject performance');box(M,y,bw,9,C.navy);const sx=[M+2,M+76,M+108,M+137,M+166];['Subject','Questions','Correct','Wrong','Net marks'].forEach((t,i)=>txt(t,sx[i],y+6,6.5,C.white,true));y+=9;
@@ -191,25 +196,25 @@ $('addSubject').onclick=addSubject;
 $('subjectsEditor').addEventListener('input',updateTotal);
 $('subjectsEditor').addEventListener('click',e=>{const i=e.target.dataset.remove;if(i!==undefined&&subjects.length>1){subjects.splice(Number(i),1);renderSubjects()}});
 $('addCheckpoint').onclick=()=>{
- const duration=Math.max(1,Number($('duration').value)||60),maxSec=duration*60-1,maxH=Math.floor(maxSec/3600);
+ const duration=getDurationSeconds(),maxSec=duration-1,maxH=Math.floor(maxSec/3600);
  modal({title:'Add checkpoint',text:'Set the time from the start of the exam. Scroll over a field to adjust it; values stop at the exam duration.',body:`<label class="field-label">Checkpoint time</label><div class="time-wheel"><label>Hours<input id="cpHour" type="number" min="0" max="${maxH}" step="1" value="0"></label><label>Minutes<input id="cpMin" type="number" min="0" max="59" step="1" value="15"></label><label>Seconds<input id="cpSec" type="number" min="0" max="59" step="1" value="0"></label></div><label class="field-label">Checkpoint label<input id="cpLabel" placeholder="e.g. First review"></label><p class="muted tiny">Maximum: ${fmtClock(maxSec)}</p>`,confirm:'Add checkpoint',onConfirm:()=>{const h=Number($('cpHour').value)||0,m=Number($('cpMin').value)||0,s=Number($('cpSec').value)||0,t=h*3600+m*60+s;if(t<1||t>maxSec){alert(`Choose a time between 00:00:01 and ${fmtClock(maxSec)}.`);return false}addCheckpoint(t/60,$('cpLabel').value.trim()||`Checkpoint ${checkpoints.length+1}`)}});
  const clamp=()=>{const h=$('cpHour'),m=$('cpMin'),s=$('cpSec');h.value=Math.max(0,Math.min(maxH,Number(h.value)||0));m.value=Math.max(0,Math.min(59,Number(m.value)||0));s.value=Math.max(0,Math.min(59,Number(s.value)||0));const t=Number(h.value)*3600+Number(m.value)*60+Number(s.value);if(t>maxSec){h.value=Math.floor(maxSec/3600);m.value=Math.floor(maxSec%3600/60);s.value=maxSec%60}};
  ['cpHour','cpMin','cpSec'].forEach(id=>{const el=$(id);el.addEventListener('input',clamp);el.addEventListener('wheel',e=>{e.preventDefault();el.value=Math.max(Number(el.min),Math.min(Number(el.max),Number(el.value)+(e.deltaY<0?1:-1)));clamp()},{passive:false})});
 };
-document.querySelectorAll('.preset').forEach(b=>b.onclick=()=>addCheckpoint(Number($('duration').value)*Number(b.dataset.fraction),`${Math.round(Number($('duration').value)*Number(b.dataset.fraction))} min checkpoint`));
+document.querySelectorAll('.preset').forEach(b=>b.onclick=()=>{const t=Math.round(getDurationSeconds()*Number(b.dataset.fraction));addCheckpoint(t/60,`${fmtClock(t)} checkpoint`)});
 $('checkpointList').addEventListener('input',e=>{if(e.target.dataset.cplabel!==undefined)checkpoints[Number(e.target.dataset.cplabel)].label=e.target.value});
 $('checkpointList').addEventListener('click',e=>{if(e.target.dataset.cpremove!==undefined){checkpoints.splice(Number(e.target.dataset.cpremove),1);renderCheckpoints()}});
-$('startExam').onclick=()=>{if(subjects.some(s=>!s.name.trim())){alert('Give every subject a name.');return}if(subjects.some(s=>s.count<1)){alert('Every subject needs at least one question.');return}if(checkpoints.some(c=>c.seconds>=Number($('duration').value)*60)){alert('Checkpoint exceeds the exam duration.');return}buildExam()};
+$('startExam').onclick=()=>{if(subjects.some(s=>!s.name.trim())){alert('Give every subject a name.');return}if(subjects.some(s=>s.count<1)){alert('Every subject needs at least one question.');return}if(checkpoints.some(c=>c.seconds>=getDurationSeconds())){alert('Checkpoint exceeds the exam duration.');return}buildExam()};
 $('finishExam').onclick=()=>finishExam(false);
 $('optionsArea').addEventListener('click',e=>{const b=e.target.closest('[data-option]');if(!b||exam.locked)return;const q=exam.questions[currentIndex],i=Number(b.dataset.option);let a=[...q.answers];if(exam.multiple){if(a.includes(i)){if(!exam.mutable)return;a=a.filter(x=>x!==i)}else if(!exam.mutable&&a.length)return;else a.push(i)}else{if(!exam.mutable&&a.length)return;a=[i]}answerQuestion(q,a)});
-$('subjectNav').addEventListener('click',e=>{const b=e.target.closest('[data-goto]');if(b){const q=exam.questions[currentIndex];if(!exam.allowUnanswered&&!q.answers.length&&Number(b.dataset.goto)!==currentIndex){alert('Please answer this question before moving on.');return}setActive(q.id);currentIndex=Number(b.dataset.goto);setActive(exam.questions[currentIndex].id);renderExam()}});
+$('subjectNav').addEventListener('click',e=>{const b=e.target.closest('[data-goto]');if(b){const q=exam.questions[currentIndex];setActive(q.id);currentIndex=Number(b.dataset.goto);setActive(exam.questions[currentIndex].id);renderExam()}});
 $('prevQuestion').onclick=()=>{if(currentIndex>0){setActive(exam.questions[currentIndex].id);currentIndex--;setActive(exam.questions[currentIndex].id);renderExam()}};
-$('nextQuestion').onclick=()=>{const q=exam.questions[currentIndex];if(!exam.allowUnanswered&&!q.answers.length){alert('Please answer this question before moving on.');return}setActive(q.id);currentIndex=(currentIndex+1)%exam.questions.length;setActive(exam.questions[currentIndex].id);renderExam()};
+$('nextQuestion').onclick=()=>{const q=exam.questions[currentIndex];setActive(q.id);currentIndex=(currentIndex+1)%exam.questions.length;setActive(exam.questions[currentIndex].id);renderExam()};
 $('alarmFloat').onclick=()=>{alarmOn=!alarmOn;$('alarmFloat').classList.toggle('active',alarmOn);$('alarmFloat').textContent=alarmOn?'♫ Alarm on':'♫ Alarm off'};
 $('evalSubjectFilter').onchange=renderEvaluation;
-$('evaluationList').addEventListener('click',e=>{const b=e.target.closest('[data-eval]');if(!b)return;const [id,result]=b.dataset.eval.split(':');getQuestion(Number(id)).evaluation=result;renderEvaluation()});
+$('evaluationList').addEventListener('click',e=>{const b=e.target.closest('[data-eval]');if(!b)return;const [id,result]=b.dataset.eval.split(':');const q=getQuestion(Number(id));if(!q)return;if(!q.answers.length&&result==='wrong')return;if(result!=='correct'&&result!=='wrong')return;q.evaluation=result;renderEvaluation()});
 $('markAllPending').onclick=()=>{exam.questions.forEach(q=>{if(q.answers.length&&!q.evaluation)q.evaluation='wrong'});renderEvaluation()};
-$('completeEvaluation').onclick=()=>{if(exam.questions.some(q=>q.answers.length&&!q.evaluation)){alert('Evaluate every answered question first.');return}renderReport();show('reportView')};
+$('completeEvaluation').onclick=()=>{const eligible=q=>q.answers.length||(exam.allowUnanswered&&!q.answers.length);if(exam.questions.some(q=>eligible(q)&&!q.evaluation)){alert('Evaluate every question shown in the evaluation list first.');return}renderReport();show('reportView')};
 ['filterSubject','filterResult','filterChanged','filterCheckpoint','filterOption','filterSort'].forEach(id=>$(id).onchange=renderQuestionReport);
 $('resetFilters').onclick=()=>{['filterSubject','filterResult','filterChanged','filterCheckpoint','filterOption','filterSort'].forEach(id=>$(id).value='all');$('filterSort').value='original';renderQuestionReport()};
 $('downloadPdf').onclick=downloadPdf;$('newExam').onclick=()=>{exam=null;show('setupView')};
@@ -217,6 +222,7 @@ $('clearHistory').onclick=()=>modal({title:'Clear exam history?',text:'This perm
 $('historyList').addEventListener('click',e=>{const b=e.target.closest('[data-openhistory]');if(b)loadOldReport(b.dataset.openhistory)});
 $('themeToggle').onclick=()=>{const dark=document.documentElement.dataset.theme!=='dark';document.documentElement.dataset.theme=dark?'dark':'light';localStorage.setItem('xmTheme',dark?'dark':'light');$('themeToggle').textContent=dark?'☀ Light mode':'☾ Dark mode'};
 const theme=localStorage.getItem('xmTheme')||'light';document.documentElement.dataset.theme=theme;$('themeToggle').textContent=theme==='dark'?'☀ Light mode':'☾ Dark mode';
-$('duration').addEventListener('change',()=>{checkpoints=checkpoints.filter(c=>c.seconds<Number($('duration').value)*60);renderCheckpoints()});
+$('durationPicker').onclick=()=>{const current=getDurationSeconds(),maxSec=36000,maxH=10;modal({title:'Set exam duration',text:'Choose the total time allowed for this XM. Scroll over a field to adjust it.',body:`<label class="field-label">Exam duration</label><div class="time-wheel"><label>Hours<input id="durHour" type="number" min="0" max="10" step="1" value="${Math.floor(current/3600)}"></label><label>Minutes<input id="durMin" type="number" min="0" max="59" step="1" value="${Math.floor(current%3600/60)}"></label><label>Seconds<input id="durSec" type="number" min="0" max="59" step="1" value="${current%60}"></label></div><p class="muted tiny">Range: 00:00:01 to 10:00:00</p>`,confirm:'Set duration',onConfirm:()=>{const h=Number($('durHour').value)||0,m=Number($('durMin').value)||0,s=Number($('durSec').value)||0,t=h*3600+m*60+s;if(t<1||t>maxSec){alert('Choose a duration between 00:00:01 and 10:00:00.');return false}setDurationSeconds(t)}});const clamp=()=>{const h=$('durHour'),m=$('durMin'),s=$('durSec');h.value=Math.max(0,Math.min(10,Number(h.value)||0));m.value=Math.max(0,Math.min(59,Number(m.value)||0));s.value=Math.max(0,Math.min(59,Number(s.value)||0));const t=Number(h.value)*3600+Number(m.value)*60+Number(s.value);if(t>maxSec){h.value=10;m.value=0;s.value=0}};['durHour','durMin','durSec'].forEach(id=>{const el=$(id);el.addEventListener('input',clamp);el.addEventListener('wheel',e=>{e.preventDefault();el.value=Math.max(Number(el.min),Math.min(Number(el.max),Number(el.value)+(e.deltaY<0?1:-1)));clamp()},{passive:false})})};
+$('durationDisplay').textContent=fmtClock(getDurationSeconds());
 renderSubjects();renderCheckpoints();renderHistory();
 })();
