@@ -115,20 +115,26 @@ function finishExam(auto=false){
 }
 function completeExam(){
  recordTime();exam.locked=true;exam.finishedAt=Date.now();clearInterval(timerId);clearInterval(tickId);$('appStatus').textContent='Exam completed';
- exam.questions.forEach(q=>q.evaluation=(!q.answers.length&&!exam.allowUnanswered)?'unanswered':null);
+ exam.questions.forEach(q=>q.evaluation=q.answers.length?null:'unanswered');
  $('evalAnswered').textContent=exam.questions.filter(q=>q.answers.length).length;$('evalUnanswered').textContent=exam.questions.filter(q=>!q.answers.length).length;$('evalTime').textContent=fmt((exam.finishedAt-exam.startedAt)/1000);
  $('evalSubjectFilter').innerHTML='<option value="all">All subjects</option>'+exam.subjects.map(s=>`<option>${esc(s.name)}</option>`).join('');
  show('evaluationView');renderEvaluation();
 }
 function renderEvaluation(){
  const filter=$('evalSubjectFilter').value;
- const eligible=q=>q.answers.length||(exam.allowUnanswered&&!q.answers.length);
- const qs=exam.questions.filter(q=>eligible(q)&&(filter==='all'||q.subject===filter));
- $('evaluationList').innerHTML=qs.map(q=>{const blank=!q.answers.length;return `<div class="eval-card"><div class="eval-qno">Q${q.id+1}</div><div><strong>${esc(q.subject)} · Question ${q.number}</strong><p>${blank?'No answer selected':`Selected: ${q.answers.map(i=>letters[i]).join(', ')}`} · ${fmt(q.timeSpent)} spent</p></div><div class="eval-options"><button class="eval-choice correct ${q.evaluation==='correct'?'active':''}" data-eval="${q.id}:correct">✓ Correct</button>${blank?'':`<button class="eval-choice wrong ${q.evaluation==='wrong'?'active':''}" data-eval="${q.id}:wrong">✕ Wrong</button>`}</div></div>`}).join('')||'<p class="empty-state">No questions to evaluate in this subject.</p>';
- const evaluated=exam.questions.filter(q=>eligible(q)&&!!q.evaluation).length;
- const eligibleCount=exam.questions.filter(eligible).length;
- $('evalProgress').textContent=`${evaluated} / ${eligibleCount} questions evaluated`;
- $('completeEvaluation').disabled=exam.questions.some(q=>eligible(q)&&!q.evaluation);
+ const qs=exam.questions.filter(q=>q.answers.length||(exam.allowUnanswered&&!q.answers.length)).filter(q=>filter==='all'||q.subject===filter);
+ $('evaluationList').innerHTML=qs.map(q=>{
+  const blank=!q.answers.length;
+  const secondChoice=blank
+   ? `<button class="eval-choice neutral ${q.evaluation==='unanswered'?'active':''}" data-eval="${q.id}:unanswered">— Neutral</button>`
+   : `<button class="eval-choice wrong ${q.evaluation==='wrong'?'active':''}" data-eval="${q.id}:wrong">✕ Wrong</button>`;
+  return `<div class="eval-card"><div class="eval-qno">Q${q.id+1}</div><div><strong>${esc(q.subject)} · Question ${q.number}</strong><p>${blank?'No answer selected':`Selected: ${q.answers.map(i=>letters[i]).join(', ')}`} · ${fmt(q.timeSpent)} spent</p></div><div class="eval-options"><button class="eval-choice correct ${q.evaluation==='correct'?'active':''}" data-eval="${q.id}:correct" ${blank&&!exam.allowUnanswered?'disabled':''}>✓ Correct</button>${secondChoice}</div></div>`;
+ }).join('')||'<p class="empty-state">No questions to evaluate in this subject.</p>';
+ const answered=exam.questions.filter(q=>q.answers.length);
+ const evaluated=answered.filter(q=>q.evaluation==='correct'||q.evaluation==='wrong').length;
+ const neutral=exam.questions.filter(q=>!q.answers.length&&q.evaluation!=='correct').length;
+ $('evalProgress').textContent=`${evaluated} / ${answered.length} answered evaluated · ${neutral} blank left neutral`;
+ $('completeEvaluation').disabled=answered.some(q=>!q.evaluation);
 }
 function calculate(){
  const correct=exam.questions.filter(q=>q.evaluation==='correct').length,wrong=exam.questions.filter(q=>q.evaluation==='wrong').length,unanswered=exam.questions.filter(q=>!q.answers.length&&q.evaluation!=='correct').length;
@@ -212,9 +218,9 @@ $('prevQuestion').onclick=()=>{if(currentIndex>0){setActive(exam.questions[curre
 $('nextQuestion').onclick=()=>{const q=exam.questions[currentIndex];setActive(q.id);currentIndex=(currentIndex+1)%exam.questions.length;setActive(exam.questions[currentIndex].id);renderExam()};
 $('alarmFloat').onclick=()=>{alarmOn=!alarmOn;$('alarmFloat').classList.toggle('active',alarmOn);$('alarmFloat').textContent=alarmOn?'♫ Alarm on':'♫ Alarm off'};
 $('evalSubjectFilter').onchange=renderEvaluation;
-$('evaluationList').addEventListener('click',e=>{const b=e.target.closest('[data-eval]');if(!b)return;const [id,result]=b.dataset.eval.split(':');const q=getQuestion(Number(id));if(!q)return;if(!q.answers.length&&result==='wrong')return;if(result!=='correct'&&result!=='wrong')return;q.evaluation=result;renderEvaluation()});
+$('evaluationList').addEventListener('click',e=>{const b=e.target.closest('[data-eval]');if(!b||b.disabled)return;const [id,result]=b.dataset.eval.split(':');const q=getQuestion(Number(id));if(!q)return;if(!q.answers.length){if(result==='wrong')return;if(result==='correct'&&!exam.allowUnanswered)return;if(result!=='correct'&&result!=='unanswered')return}else if(result!=='correct'&&result!=='wrong')return;q.evaluation=result;renderEvaluation()});
 $('markAllPending').onclick=()=>{exam.questions.forEach(q=>{if(q.answers.length&&!q.evaluation)q.evaluation='wrong'});renderEvaluation()};
-$('completeEvaluation').onclick=()=>{const eligible=q=>q.answers.length||(exam.allowUnanswered&&!q.answers.length);if(exam.questions.some(q=>eligible(q)&&!q.evaluation)){alert('Evaluate every question shown in the evaluation list first.');return}renderReport();show('reportView')};
+$('completeEvaluation').onclick=()=>{if(exam.questions.some(q=>q.answers.length&&!q.evaluation)){alert('Evaluate every answered question first. Blank questions can remain neutral.');return}renderReport();show('reportView')};
 ['filterSubject','filterResult','filterChanged','filterCheckpoint','filterOption','filterSort'].forEach(id=>$(id).onchange=renderQuestionReport);
 $('resetFilters').onclick=()=>{['filterSubject','filterResult','filterChanged','filterCheckpoint','filterOption','filterSort'].forEach(id=>$(id).value='all');$('filterSort').value='original';renderQuestionReport()};
 $('downloadPdf').onclick=downloadPdf;$('newExam').onclick=()=>{exam=null;show('setupView')};
